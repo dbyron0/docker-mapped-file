@@ -1,0 +1,58 @@
+apply plugin: 'java'
+
+dependencies {
+   repositories {
+      mavenCentral()
+   }
+
+   testCompile 'junit:junit:4.12'
+   testCompile 'org.testcontainers:testcontainers:1.2.1'
+   testCompile 'ch.qos.logback:logback-classic:1.1.2'
+}
+
+jar {
+   manifest {
+      attributes('Main-Class': 'dockertest.ReadFile')
+   }
+}
+
+def dockerImageName = "${project.name}:latest"
+
+task buildDockerImage(type: Exec) {
+   dependsOn tasks.jar
+   onlyIf {
+      tasks.jar.didWork
+   }
+   commandLine 'docker', 'build', '-t', dockerImageName, '.'
+}
+tasks.build.dependsOn tasks.buildDockerImage
+
+task lookForDockerImage(type: Exec) {
+   commandLine 'docker', 'images', '-q', dockerImageName
+   standardOutput = new ByteArrayOutputStream()
+   doLast {
+      def imageId = standardOutput.toString().trim()
+      ext.setProperty('imageExists', !imageId.isEmpty())
+   }
+}
+
+task cleanDockerImage(type: Exec) {
+   dependsOn tasks.lookForDockerImage
+   onlyIf {
+      tasks.lookForDockerImage.ext.getProperty('imageExists')
+   }
+   commandLine 'docker', 'rmi', dockerImageName
+}
+tasks.clean.dependsOn tasks.cleanDockerImage
+
+def testFile = new File(projectDir, 'some_file')
+test {
+   // Write a file in the current directory to map into the container
+   doFirst {
+      testFile.write 'contents of test file'
+   }
+}
+
+tasks.clean {
+   delete testFile
+}
